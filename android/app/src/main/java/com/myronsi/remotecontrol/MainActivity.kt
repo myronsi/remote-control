@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitPointerEventScope
+import androidx.compose.foundation.gestures.awaitPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,8 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEvent
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.unit.dp
@@ -202,25 +202,21 @@ private fun RemoteControlScreen() {
                     .pointerInput(connected) {
                         awaitPointerEventScope {
                             while (true) {
-                                val down = awaitFirstDown(requireUnconsumed = false)
+                                awaitFirstDown(requireUnconsumed = false)
                                 val startTime = System.currentTimeMillis()
                                 var totalX = 0f
                                 var totalY = 0f
                                 var rightClickSent = false
 
                                 while (true) {
-                                    val event: PointerEvent = awaitPointerEvent()
+                                    val event = awaitPointerEvent()
                                     val pressed = event.changes.filter { it.pressed }
                                     val pointerCount = pressed.size
 
                                     if (pointerCount == 0) {
                                         val elapsed = System.currentTimeMillis() - startTime
                                         if (!rightClickSent && abs(totalX) < 20f && abs(totalY) < 20f) {
-                                            if (elapsed >= 500L) {
-                                                sendButton("right")
-                                            } else {
-                                                sendButton("left")
-                                            }
+                                            if (elapsed >= 500L) sendButton("right") else sendButton("left")
                                         }
                                         break
                                     }
@@ -245,9 +241,7 @@ private fun RemoteControlScreen() {
                                         if (delta.x != 0f || delta.y != 0f) {
                                             val dx = delta.x.toInt()
                                             val dy = delta.y.toInt()
-                                            if (dx != 0 || dy != 0) {
-                                                sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
-                                            }
+                                            if (dx != 0 || dy != 0) sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
                                         }
                                     }
                                 }
@@ -265,12 +259,8 @@ private fun RemoteControlScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) {
-                    Text("Left")
-                }
-                Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) {
-                    Text("Right")
-                }
+                Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) { Text("Left") }
+                Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) { Text("Right") }
             }
         }
     }
