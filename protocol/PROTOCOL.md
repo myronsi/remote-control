@@ -1,4 +1,4 @@
-# Remote Control wire protocol v0.1
+# Remote Control Protocol v1
 
 Development protocol used by the first Linux agent.
 
