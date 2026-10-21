@@ -16,7 +16,7 @@ add_executable(remote-control-agent
     src/network/server.cpp
     src/network/discovery.cpp
     src/platform/input.cpp
-    src/platform/x11_input.cpp
+    src/platform/uinput_input.cpp
 )
 
 target_include_directories(remote-control-agent PRIVATE src)
@@ -25,10 +25,3 @@ target_link_libraries(remote-control-agent PRIVATE
     Threads::Threads
     PkgConfig::AVAHI
 )
-
-if(UNIX AND NOT APPLE)
-    find_package(X11 REQUIRED)
-    find_library(XTST_LIBRARY Xtst REQUIRED)
-    target_include_directories(remote-control-agent PRIVATE ${X11_INCLUDE_DIR})
-    target_link_libraries(remote-control-agent PRIVATE ${X11_LIBRARIES} ${XTST_LIBRARY})
-endif()
