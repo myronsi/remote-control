@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitPointerEventScope
-import androidx.compose.foundation.gestures.awaitPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +38,7 @@ import java.io.BufferedWriter
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -225,7 +224,11 @@ private fun RemoteControlScreen() {
                                         val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat() / pointerCount
                                         val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat() / pointerCount
                                         if (abs(dy) >= 1f || abs(dx) >= 1f) {
-                                            sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":${(-dx / 12f).toInt()},\"dy\":${(-dy / 12f).toInt()}}")
+                                            val scrollX = (-dx / 12f).roundToInt()
+                                            val scrollY = (-dy / 12f).roundToInt()
+                                            if (scrollX != 0 || scrollY != 0) {
+                                                sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":$scrollX,\"dy\":$scrollY}")
+                                            }
                                         }
                                     } else {
                                         val change = pressed.first()
@@ -239,9 +242,11 @@ private fun RemoteControlScreen() {
                                         }
 
                                         if (delta.x != 0f || delta.y != 0f) {
-                                            val dx = delta.x.toInt()
-                                            val dy = delta.y.toInt()
-                                            if (dx != 0 || dy != 0) sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
+                                            val dx = (delta.x * 1.5f).roundToInt()
+                                            val dy = (delta.y * 1.5f).roundToInt()
+                                            if (dx != 0 || dy != 0) {
+                                                sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
+                                            }
                                         }
                                     }
                                 }
