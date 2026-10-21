@@ -102,6 +102,17 @@ std::string handle_command(std::string_view line) {
         return "{\"version\":1,\"type\":\"ok\"}\n";
     }
 
+    if (has_type(line, "key")) {
+        const auto key = json_string_value(line, "key");
+        const auto action = json_string_value(line, "action");
+        if (action != "down" && action != "up") {
+            return make_error("Invalid keyboard key action");
+        }
+        if (key.empty()) return make_error("Keyboard key is empty");
+        if (!remote::input::key_event(key, action == "down", error)) return make_error(error);
+        return "{\"version\":1,\"type\":\"ok\"}\n";
+    }
+
     return make_error("Unknown command");
 }
 
