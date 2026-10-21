@@ -23,4 +23,8 @@ bool scroll(int dx, int dy, std::string& error) {
     return uinput_input::scroll(dx, dy, error);
 }
 
+bool key_event(const std::string& key, bool down, std::string& error) {
+    return uinput_input::key_event(key, down, error);
+}
+
 }
