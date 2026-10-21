@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -127,10 +130,13 @@ private fun RemoteControlScreen() {
         }
     }
 
-    fun sendCommand(json: String) {
+    fun sendCommand(json: String, successStatus: String? = null) {
         scope.launch(Dispatchers.IO) {
             try {
                 client.send(json)
+                if (successStatus != null) {
+                    withContext(Dispatchers.Main) { status = successStatus }
+                }
             } catch (_: Exception) {
                 client.close()
                 withContext(Dispatchers.Main) {
@@ -171,6 +177,10 @@ private fun RemoteControlScreen() {
                 if (alt && key != "ALT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"up\"}")
                 if (ctrl && key != "CTRL") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"up\"}")
                 if (shift && key != "SHIFT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"up\"}")
+
+                withContext(Dispatchers.Main) {
+                    status = "Sent: $key"
+                }
             } catch (_: Exception) {
                 client.close()
                 withContext(Dispatchers.Main) {
@@ -185,19 +195,19 @@ private fun RemoteControlScreen() {
         when (key) {
             "SHIFT" -> {
                 shift = !shift
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"${if (shift) "down" else "up"}\"}")
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"${if (shift) "down" else "up"}\"}", if (shift) "Shift ON" else "Shift OFF")
             }
             "CTRL" -> {
                 ctrl = !ctrl
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"${if (ctrl) "down" else "up"}\"}")
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"${if (ctrl) "down" else "up"}\"}", if (ctrl) "Ctrl ON" else "Ctrl OFF")
             }
             "ALT" -> {
                 alt = !alt
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"${if (alt) "down" else "up"}\"}")
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"${if (alt) "down" else "up"}\"}", if (alt) "Alt ON" else "Alt OFF")
             }
             "META" -> {
                 meta = !meta
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"${if (meta) "down" else "up"}\"}")
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"${if (meta) "down" else "up"}\"}", if (meta) "Meta ON" else "Meta OFF")
             }
         }
     }
@@ -262,18 +272,9 @@ private fun RemoteControlScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { showKeyboard = false }
-                ) { Text("Touchpad") }
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { showKeyboard = true }
-                ) { Text("Keyboard") }
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { disconnect() }
-                ) { Text("Disconnect") }
+                Button(modifier = Modifier.weight(1f), onClick = { showKeyboard = false }) { Text("Touchpad") }
+                Button(modifier = Modifier.weight(1f), onClick = { showKeyboard = true }) { Text("Keyboard") }
+                Button(modifier = Modifier.weight(1f), onClick = { disconnect() }) { Text("Disconnect") }
             }
 
             Spacer(Modifier.height(4.dp))
@@ -377,7 +378,10 @@ private fun Keyboard(
     onModifier: (String) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = false)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         KeyboardRow(listOf("ESC"), onKey)
@@ -449,10 +453,13 @@ private fun KeyButton(
     onKey: (String) -> Unit
 ) {
     Button(
-        modifier = modifier,
+        modifier = modifier.height(52.dp),
         onClick = { onKey(key) }
     ) {
-        Text(label)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }
 
@@ -464,9 +471,12 @@ private fun ModifierKey(
     onClick: () -> Unit
 ) {
     Button(
-        modifier = modifier,
+        modifier = modifier.height(52.dp),
         onClick = onClick
     ) {
-        Text(if (active) "$label*" else label)
+        Text(
+            text = if (active) "$label ON" else label,
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }
