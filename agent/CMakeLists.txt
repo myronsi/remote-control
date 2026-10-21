@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(remote-control-agent
     src/main.cpp
     src/network/server.cpp
+    src/network/discovery.cpp
     src/platform/input.cpp
     src/platform/x11_input.cpp
 )
