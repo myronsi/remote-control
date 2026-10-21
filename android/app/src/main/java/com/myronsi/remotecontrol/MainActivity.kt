@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -56,12 +55,10 @@ private class RemoteClient {
     @Synchronized
     fun connect(host: String, port: Int) {
         close()
-
         val newSocket = Socket()
         newSocket.tcpNoDelay = true
         newSocket.keepAlive = true
         newSocket.connect(InetSocketAddress(host, port), 3000)
-
         socket = newSocket
         writer = newSocket.getOutputStream().bufferedWriter(Charsets.UTF_8)
         send("{\"version\":1,\"type\":\"hello\"}")
@@ -69,7 +66,7 @@ private class RemoteClient {
 
     @Synchronized
     fun send(json: String) {
-        val currentWriter = writer ?: return
+        val currentWriter = writer ?: throw IllegalStateException("Not connected")
         currentWriter.write(json)
         currentWriter.newLine()
         currentWriter.flush()
@@ -78,10 +75,7 @@ private class RemoteClient {
     @Synchronized
     fun close() {
         writer = null
-        try {
-            socket?.close()
-        } catch (_: Exception) {
-        }
+        try { socket?.close() } catch (_: Exception) { }
         socket = null
     }
 }
@@ -141,9 +135,7 @@ private fun RemoteControlScreen() {
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Remote Control", style = MaterialTheme.typography.headlineMedium)
@@ -151,16 +143,13 @@ private fun RemoteControlScreen() {
 
         if (!connected) {
             Text("Available PCs", style = MaterialTheme.typography.titleMedium)
-
             if (devices.isEmpty()) {
                 Text("No PCs found yet.")
             } else {
                 devices.forEach { device ->
                     Button(
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            connectTo(device.host, device.port, device.name)
-                        }
+                        onClick = { connectTo(device.host, device.port, device.name) }
                     ) {
                         Column {
                             Text(device.name)
@@ -181,9 +170,7 @@ private fun RemoteControlScreen() {
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = manualHost.isNotBlank(),
-                onClick = {
-                    connectTo(manualHost.trim(), 48721, manualHost.trim())
-                }
+                onClick = { connectTo(manualHost.trim(), 48721, manualHost.trim()) }
             ) {
                 Text("Connect manually")
             }
@@ -195,37 +182,31 @@ private fun RemoteControlScreen() {
                     connected = false
                     status = "Disconnected"
                 }
-            ) {
-                Text("Disconnect")
-            }
+            ) { Text("Disconnect") }
 
             Spacer(Modifier.height(4.dp))
 
             Column(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
+                    .weight(1f)
                     .background(Color.LightGray)
                     .pointerInput(connected) {
                         detectDragGestures(
                             onDrag = { change, dragAmount ->
                                 change.consume()
-
                                 val dx = dragAmount.x.toInt()
                                 val dy = dragAmount.y.toInt()
-
                                 if (dx != 0 || dy != 0) {
                                     scope.launch(Dispatchers.IO) {
                                         try {
-                                            client.send(
-                                                "{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}"
-                                            )
+                                            client.send("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
                                         } catch (_: Exception) {
+                                            client.close()
                                             withContext(Dispatchers.Main) {
                                                 connected = false
                                                 status = "Connection lost"
                                             }
-                                            client.close()
                                         }
                                     }
                                 }
@@ -243,17 +224,10 @@ private fun RemoteControlScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { sendButton("left") }
-                ) {
+                Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) {
                     Text("Left")
                 }
-
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = { sendButton("right") }
-                ) {
+                Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) {
                     Text("Right")
                 }
             }
