@@ -34,6 +34,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.BufferedWriter
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,14 +50,18 @@ class MainActivity : ComponentActivity() {
 }
 
 private class RemoteClient {
-    private var socket: java.net.Socket? = null
-    private var writer: java.io.BufferedWriter? = null
+    private var socket: Socket? = null
+    private var writer: BufferedWriter? = null
 
     @Synchronized
     fun connect(host: String, port: Int) {
         close()
-        val newSocket = java.net.Socket(host, port)
+
+        val newSocket = Socket()
         newSocket.tcpNoDelay = true
+        newSocket.keepAlive = true
+        newSocket.connect(InetSocketAddress(host, port), 3000)
+
         socket = newSocket
         writer = newSocket.getOutputStream().bufferedWriter(Charsets.UTF_8)
         send("{\"version\":1,\"type\":\"hello\"}")
@@ -99,6 +106,40 @@ private fun RemoteControlScreen() {
         }
     }
 
+    fun connectTo(host: String, port: Int, name: String) {
+        status = "Connecting to $name..."
+        scope.launch(Dispatchers.IO) {
+            try {
+                client.connect(host, port)
+                withContext(Dispatchers.Main) {
+                    connected = true
+                    status = "Connected to $name"
+                }
+            } catch (e: Exception) {
+                client.close()
+                withContext(Dispatchers.Main) {
+                    connected = false
+                    status = "Connection failed: ${e.message ?: "unknown error"}"
+                }
+            }
+        }
+    }
+
+    fun sendButton(button: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"down\"}")
+                client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"up\"}")
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    connected = false
+                    status = "Connection lost"
+                }
+                client.close()
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -118,20 +159,7 @@ private fun RemoteControlScreen() {
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            status = "Connecting to ${device.name}..."
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    client.connect(device.host, device.port)
-                                    withContext(Dispatchers.Main) {
-                                        connected = true
-                                        status = "Connected to ${device.name}"
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        status = "Connection failed: ${e.message ?: "unknown error"}"
-                                    }
-                                }
-                            }
+                            connectTo(device.host, device.port, device.name)
                         }
                     ) {
                         Column {
@@ -154,21 +182,7 @@ private fun RemoteControlScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = manualHost.isNotBlank(),
                 onClick = {
-                    val host = manualHost.trim()
-                    status = "Connecting..."
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            client.connect(host, 48721)
-                            withContext(Dispatchers.Main) {
-                                connected = true
-                                status = "Connected to $host"
-                            }
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                status = "Connection failed: ${e.message ?: "unknown error"}"
-                            }
-                        }
-                    }
+                    connectTo(manualHost.trim(), 48721, manualHost.trim())
                 }
             ) {
                 Text("Connect manually")
@@ -193,17 +207,30 @@ private fun RemoteControlScreen() {
                     .fillMaxWidth()
                     .background(Color.LightGray)
                     .pointerInput(connected) {
-                        detectDragGestures { _, dragAmount ->
-                            val dx = dragAmount.x.toInt()
-                            val dy = dragAmount.y.toInt()
-                            if (dx != 0 || dy != 0) {
-                                scope.launch(Dispatchers.IO) {
-                                    client.send(
-                                        "{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}"
-                                    )
+                        detectDragGestures(
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+
+                                val dx = dragAmount.x.toInt()
+                                val dy = dragAmount.y.toInt()
+
+                                if (dx != 0 || dy != 0) {
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            client.send(
+                                                "{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}"
+                                            )
+                                        } catch (_: Exception) {
+                                            withContext(Dispatchers.Main) {
+                                                connected = false
+                                                status = "Connection lost"
+                                            }
+                                            client.close()
+                                        }
+                                    }
                                 }
                             }
-                        }
+                        )
                     },
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -218,23 +245,17 @@ private fun RemoteControlScreen() {
             ) {
                 Button(
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"left\",\"action\":\"down\"}")
-                            client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"left\",\"action\":\"up\"}")
-                        }
-                    }
-                ) { Text("Left") }
+                    onClick = { sendButton("left") }
+                ) {
+                    Text("Left")
+                }
 
                 Button(
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"right\",\"action\":\"down\"}")
-                            client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"right\",\"action\":\"up\"}")
-                        }
-                    }
-                ) { Text("Right") }
+                    onClick = { sendButton("right") }
+                ) {
+                    Text("Right")
+                }
             }
         }
     }
