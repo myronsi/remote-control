@@ -94,6 +94,11 @@ private fun RemoteControlScreen() {
     var status by remember { mutableStateOf("Searching for PCs...") }
     var connected by remember { mutableStateOf(false) }
     var manualHost by remember { mutableStateOf("") }
+    var showKeyboard by remember { mutableStateOf(false) }
+    var shift by remember { mutableStateOf(false) }
+    var ctrl by remember { mutableStateOf(false) }
+    var alt by remember { mutableStateOf(false) }
+    var meta by remember { mutableStateOf(false) }
 
     DisposableEffect(discovery) {
         discovery.start()
@@ -137,8 +142,79 @@ private fun RemoteControlScreen() {
     }
 
     fun sendButton(button: String) {
-        sendCommand("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"down\"}")
-        sendCommand("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"up\"}")
+        scope.launch(Dispatchers.IO) {
+            try {
+                client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"down\"}")
+                client.send("{\"version\":1,\"type\":\"mouse_button\",\"button\":\"$button\",\"action\":\"up\"}")
+            } catch (_: Exception) {
+                client.close()
+                withContext(Dispatchers.Main) {
+                    connected = false
+                    status = "Connection lost"
+                }
+            }
+        }
+    }
+
+    fun sendKey(key: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (shift && key != "SHIFT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"down\"}")
+                if (ctrl && key != "CTRL") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"down\"}")
+                if (alt && key != "ALT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"down\"}")
+                if (meta && key != "META") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"down\"}")
+
+                client.send("{\"version\":1,\"type\":\"key\",\"key\":\"$key\",\"action\":\"down\"}")
+                client.send("{\"version\":1,\"type\":\"key\",\"key\":\"$key\",\"action\":\"up\"}")
+
+                if (meta && key != "META") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"up\"}")
+                if (alt && key != "ALT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"up\"}")
+                if (ctrl && key != "CTRL") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"up\"}")
+                if (shift && key != "SHIFT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"up\"}")
+            } catch (_: Exception) {
+                client.close()
+                withContext(Dispatchers.Main) {
+                    connected = false
+                    status = "Connection lost"
+                }
+            }
+        }
+    }
+
+    fun toggleModifier(key: String) {
+        when (key) {
+            "SHIFT" -> {
+                shift = !shift
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"${if (shift) "down" else "up"}\"}")
+            }
+            "CTRL" -> {
+                ctrl = !ctrl
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"${if (ctrl) "down" else "up"}\"}")
+            }
+            "ALT" -> {
+                alt = !alt
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"${if (alt) "down" else "up"}\"}")
+            }
+            "META" -> {
+                meta = !meta
+                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"${if (meta) "down" else "up"}\"}")
+            }
+        }
+    }
+
+    fun disconnect() {
+        if (shift) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"up\"}")
+        if (ctrl) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"up\"}")
+        if (alt) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"up\"}")
+        if (meta) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"up\"}")
+        shift = false
+        ctrl = false
+        alt = false
+        meta = false
+        client.close()
+        connected = false
+        showKeyboard = false
+        status = "Disconnected"
     }
 
     Column(
@@ -182,91 +258,215 @@ private fun RemoteControlScreen() {
                 Text("Connect manually")
             }
         } else {
-            Button(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    client.close()
-                    connected = false
-                    status = "Disconnected"
-                }
-            ) { Text("Disconnect") }
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = { showKeyboard = false }
+                ) { Text("Touchpad") }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = { showKeyboard = true }
+                ) { Text("Keyboard") }
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = { disconnect() }
+                ) { Text("Disconnect") }
+            }
 
             Spacer(Modifier.height(4.dp))
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(Color.LightGray)
-                    .pointerInput(connected) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                awaitFirstDown(requireUnconsumed = false)
-                                val startTime = System.currentTimeMillis()
-                                var totalX = 0f
-                                var totalY = 0f
-                                var rightClickSent = false
-
+            if (!showKeyboard) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color.LightGray)
+                        .pointerInput(connected) {
+                            awaitPointerEventScope {
                                 while (true) {
-                                    val event = awaitPointerEvent()
-                                    val pressed = event.changes.filter { it.pressed }
-                                    val pointerCount = pressed.size
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    val startTime = System.currentTimeMillis()
+                                    var totalX = 0f
+                                    var totalY = 0f
+                                    var rightClickSent = false
 
-                                    if (pointerCount == 0) {
-                                        val elapsed = System.currentTimeMillis() - startTime
-                                        if (!rightClickSent && abs(totalX) < 20f && abs(totalY) < 20f) {
-                                            if (elapsed >= 500L) sendButton("right") else sendButton("left")
-                                        }
-                                        break
-                                    }
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val pressed = event.changes.filter { it.pressed }
+                                        val pointerCount = pressed.size
 
-                                    if (pointerCount >= 2) {
-                                        val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat() / pointerCount
-                                        val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat() / pointerCount
-                                        if (abs(dy) >= 1f || abs(dx) >= 1f) {
-                                            val scrollX = (-dx / 12f).roundToInt()
-                                            val scrollY = (-dy / 12f).roundToInt()
-                                            if (scrollX != 0 || scrollY != 0) {
-                                                sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":$scrollX,\"dy\":$scrollY}")
+                                        if (pointerCount == 0) {
+                                            val elapsed = System.currentTimeMillis() - startTime
+                                            if (!rightClickSent && abs(totalX) < 20f && abs(totalY) < 20f) {
+                                                if (elapsed >= 500L) sendButton("right") else sendButton("left")
                                             }
-                                        }
-                                    } else {
-                                        val change = pressed.first()
-                                        val delta = change.positionChange()
-                                        totalX += delta.x
-                                        totalY += delta.y
-
-                                        if (!rightClickSent && System.currentTimeMillis() - startTime >= 500L && abs(totalX) < 20f && abs(totalY) < 20f) {
-                                            sendButton("right")
-                                            rightClickSent = true
+                                            break
                                         }
 
-                                        if (delta.x != 0f || delta.y != 0f) {
-                                            val dx = (delta.x * 1.5f).roundToInt()
-                                            val dy = (delta.y * 1.5f).roundToInt()
-                                            if (dx != 0 || dy != 0) {
-                                                sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
+                                        if (pointerCount >= 2) {
+                                            val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat() / pointerCount
+                                            val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat() / pointerCount
+                                            if (abs(dy) >= 1f || abs(dx) >= 1f) {
+                                                val scrollX = (-dx / 12f).roundToInt()
+                                                val scrollY = (-dy / 12f).roundToInt()
+                                                if (scrollX != 0 || scrollY != 0) {
+                                                    sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":$scrollX,\"dy\":$scrollY}")
+                                                }
+                                            }
+                                        } else {
+                                            val change = pressed.first()
+                                            val delta = change.positionChange()
+                                            totalX += delta.x
+                                            totalY += delta.y
+
+                                            if (!rightClickSent && System.currentTimeMillis() - startTime >= 500L && abs(totalX) < 20f && abs(totalY) < 20f) {
+                                                sendButton("right")
+                                                rightClickSent = true
+                                            }
+
+                                            if (delta.x != 0f || delta.y != 0f) {
+                                                val dx = (delta.x * 1.5f).roundToInt()
+                                                val dy = (delta.y * 1.5f).roundToInt()
+                                                if (dx != 0 || dy != 0) {
+                                                    sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                    },
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("Touchpad", style = MaterialTheme.typography.headlineSmall)
-                Text("Drag • tap • two-finger scroll")
-            }
+                        },
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Touchpad", style = MaterialTheme.typography.headlineSmall)
+                    Text("Drag • tap • two-finger scroll")
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) { Text("Left") }
-                Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) { Text("Right") }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) { Text("Left") }
+                    Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) { Text("Right") }
+                }
+            } else {
+                Keyboard(
+                    shift = shift,
+                    ctrl = ctrl,
+                    alt = alt,
+                    meta = meta,
+                    onKey = { sendKey(it) },
+                    onModifier = { toggleModifier(it) }
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun Keyboard(
+    shift: Boolean,
+    ctrl: Boolean,
+    alt: Boolean,
+    meta: Boolean,
+    onKey: (String) -> Unit,
+    onModifier: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        KeyboardRow(listOf("ESC"), onKey)
+        KeyboardRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), onKey)
+        KeyboardRow(listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"), onKey)
+        KeyboardRow(listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"), onKey)
+        KeyboardRow(listOf("Z", "X", "C", "V", "B", "N", "M"), onKey)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            ModifierKey("Shift", shift, Modifier.weight(1.5f)) { onModifier("SHIFT") }
+            ModifierKey("Ctrl", ctrl, Modifier.weight(1f)) { onModifier("CTRL") }
+            ModifierKey("Alt", alt, Modifier.weight(1f)) { onModifier("ALT") }
+            ModifierKey("Meta", meta, Modifier.weight(1f)) { onModifier("META") }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            KeyButton("Tab", "TAB", Modifier.weight(1f), onKey)
+            KeyButton("Backspace", "BACKSPACE", Modifier.weight(1.7f), onKey)
+            KeyButton("Enter", "ENTER", Modifier.weight(1.5f), onKey)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            KeyButton("Space", "SPACE", Modifier.weight(4f), onKey)
+            KeyButton("←", "LEFT", Modifier.weight(1f), onKey)
+            KeyButton("↑", "UP", Modifier.weight(1f), onKey)
+            KeyButton("↓", "DOWN", Modifier.weight(1f), onKey)
+            KeyButton("→", "RIGHT", Modifier.weight(1f), onKey)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            KeyButton("Delete", "DELETE", Modifier.weight(1f), onKey)
+            KeyButton("Home", "HOME", Modifier.weight(1f), onKey)
+            KeyButton("End", "END", Modifier.weight(1f), onKey)
+            KeyButton("PgUp", "PAGEUP", Modifier.weight(1f), onKey)
+            KeyButton("PgDn", "PAGEDOWN", Modifier.weight(1f), onKey)
+        }
+    }
+}
+
+@Composable
+private fun KeyboardRow(keys: List<String>, onKey: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        keys.forEach { key ->
+            KeyButton(key, key, Modifier.weight(1f), onKey)
+        }
+    }
+}
+
+@Composable
+private fun KeyButton(
+    label: String,
+    key: String,
+    modifier: Modifier,
+    onKey: (String) -> Unit
+) {
+    Button(
+        modifier = modifier,
+        onClick = { onKey(key) }
+    ) {
+        Text(label)
+    }
+}
+
+@Composable
+private fun ModifierKey(
+    label: String,
+    active: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        modifier = modifier,
+        onClick = onClick
+    ) {
+        Text(if (active) "$label*" else label)
     }
 }
