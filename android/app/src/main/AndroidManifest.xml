@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:label="Remote Control"
         android:supportsRtl="true"
-        android:theme="@style/Theme.RemoteControl">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
             android:exported="true">
