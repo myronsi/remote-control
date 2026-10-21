@@ -6,6 +6,7 @@ Private LAN remote-control application for Android → Windows/Linux PCs.
 
 - Android phone as the controller
 - Linux PC agent first
+- Ubuntu/Debian with GNOME/KDE
 - Same WLAN only
 - No cloud account or backend
 - C++20 + CMake for the PC agent
@@ -24,7 +25,9 @@ remote-control/
 
 ## Linux MVP
 
-The first input backend targets X11 using XTest. Wayland support is intentionally isolated behind the same platform interface and will be added separately because Wayland compositors restrict synthetic global input.
+The first input backend targets X11 using XTest. Wayland support is isolated behind the same platform interface and will be added separately because Wayland compositors restrict synthetic global input.
+
+The agent advertises itself on the local network using Avahi DNS-SD as `_remotecontrol._tcp`. Android discovers this service using the native Android NSD API.
 
 ## Build the Linux agent
 
@@ -32,7 +35,7 @@ On Debian/Ubuntu:
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libx11-dev libxtst-dev
+sudo apt install build-essential cmake pkg-config libavahi-client-dev libx11-dev libxtst-dev
 
 cd agent
 cmake -S . -B build
@@ -40,7 +43,17 @@ cmake --build build -j
 ./build/remote-control-agent
 ```
 
-The current agent listens on TCP port `48721` and accepts newline-delimited JSON commands. This is a development protocol; authentication/encryption and discovery are planned before a production release.
+Avahi's system service should also be running:
+
+```bash
+systemctl status avahi-daemon
+```
+
+The current agent listens on TCP port `48721` and advertises that port through DNS-SD. The TCP protocol is still a development protocol; authentication/encryption are required before production use.
+
+## Android
+
+Open the `android/` directory in Android Studio and run the `app` configuration on an Android device or emulator. The app discovers `_remotecontrol._tcp` services and displays resolved PC names, addresses and ports. Manual IP entry remains available as a development fallback.
 
 ## Development status
 
@@ -50,8 +63,10 @@ The current agent listens on TCP port `48721` and accepts newline-delimited JSON
 - [x] Linux/X11 mouse movement
 - [x] Linux/X11 mouse buttons
 - [x] Linux/X11 scrolling
-- [ ] Android touchpad UI
-- [ ] LAN discovery
+- [x] Android touchpad UI
+- [x] LAN discovery protocol
+- [x] Linux DNS-SD advertisement foundation
+- [x] Android DNS-SD discovery
 - [ ] Pairing and authentication
 - [ ] Encryption
 - [ ] Keyboard input
