@@ -18,16 +18,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +52,7 @@ private class RemoteClient {
 
     @Synchronized
     fun connect(host: String, port: Int) {
-        socket?.close()
+        close()
         val newSocket = java.net.Socket(host, port)
         newSocket.tcpNoDelay = true
         socket = newSocket
@@ -70,12 +71,15 @@ private class RemoteClient {
     @Synchronized
     fun close() {
         writer = null
-        socket?.close()
+        try {
+            socket?.close()
+        } catch (_: Exception) {
+        }
         socket = null
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun RemoteControlScreen() {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -85,7 +89,6 @@ private fun RemoteControlScreen() {
 
     var status by remember { mutableStateOf("Searching for PCs...") }
     var connected by remember { mutableStateOf(false) }
-    var selectedDevice by remember { mutableStateOf<DiscoveredPc?>(null) }
     var manualHost by remember { mutableStateOf("") }
 
     DisposableEffect(discovery) {
@@ -115,7 +118,6 @@ private fun RemoteControlScreen() {
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            selectedDevice = device
                             status = "Connecting to ${device.name}..."
                             scope.launch(Dispatchers.IO) {
                                 try {
@@ -126,7 +128,6 @@ private fun RemoteControlScreen() {
                                     }
                                 } catch (e: Exception) {
                                     withContext(Dispatchers.Main) {
-                                        connected = false
                                         status = "Connection failed: ${e.message ?: "unknown error"}"
                                     }
                                 }
@@ -192,8 +193,7 @@ private fun RemoteControlScreen() {
                     .fillMaxWidth()
                     .background(Color.LightGray)
                     .pointerInput(connected) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
+                        detectDragGestures { _, dragAmount ->
                             val dx = dragAmount.x.toInt()
                             val dy = dragAmount.y.toInt()
                             if (dx != 0 || dy != 0) {
@@ -206,7 +206,7 @@ private fun RemoteControlScreen() {
                         }
                     },
                 verticalArrangement = Arrangement.Center,
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Touchpad", style = MaterialTheme.typography.headlineSmall)
                 Text("Drag to move the PC cursor")
