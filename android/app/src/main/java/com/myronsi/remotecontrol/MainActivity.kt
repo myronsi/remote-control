@@ -178,9 +178,7 @@ private fun RemoteControlScreen() {
                 if (ctrl && key != "CTRL") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"up\"}")
                 if (shift && key != "SHIFT") client.send("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"up\"}")
 
-                withContext(Dispatchers.Main) {
-                    status = "Sent: $key"
-                }
+                withContext(Dispatchers.Main) { status = "Sent: $key" }
             } catch (_: Exception) {
                 client.close()
                 withContext(Dispatchers.Main) {
@@ -193,22 +191,10 @@ private fun RemoteControlScreen() {
 
     fun toggleModifier(key: String) {
         when (key) {
-            "SHIFT" -> {
-                shift = !shift
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"${if (shift) "down" else "up"}\"}", if (shift) "Shift ON" else "Shift OFF")
-            }
-            "CTRL" -> {
-                ctrl = !ctrl
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"${if (ctrl) "down" else "up"}\"}", if (ctrl) "Ctrl ON" else "Ctrl OFF")
-            }
-            "ALT" -> {
-                alt = !alt
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"${if (alt) "down" else "up"}\"}", if (alt) "Alt ON" else "Alt OFF")
-            }
-            "META" -> {
-                meta = !meta
-                sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"${if (meta) "down" else "up"}\"}", if (meta) "Meta ON" else "Meta OFF")
-            }
+            "SHIFT" -> { shift = !shift; sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"SHIFT\",\"action\":\"${if (shift) "down" else "up"}\"}", if (shift) "Shift ON" else "Shift OFF") }
+            "CTRL" -> { ctrl = !ctrl; sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"${if (ctrl) "down" else "up"}\"}", if (ctrl) "Ctrl ON" else "Ctrl OFF") }
+            "ALT" -> { alt = !alt; sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"${if (alt) "down" else "up"}\"}", if (alt) "Alt ON" else "Alt OFF") }
+            "META" -> { meta = !meta; sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"${if (meta) "down" else "up"}\"}", if (meta) "Meta ON" else "Meta OFF") }
         }
     }
 
@@ -217,14 +203,8 @@ private fun RemoteControlScreen() {
         if (ctrl) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"CTRL\",\"action\":\"up\"}")
         if (alt) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"ALT\",\"action\":\"up\"}")
         if (meta) sendCommand("{\"version\":1,\"type\":\"key\",\"key\":\"META\",\"action\":\"up\"}")
-        shift = false
-        ctrl = false
-        alt = false
-        meta = false
-        client.close()
-        connected = false
-        showKeyboard = false
-        status = "Disconnected"
+        shift = false; ctrl = false; alt = false; meta = false
+        client.close(); connected = false; showKeyboard = false; status = "Disconnected"
     }
 
     Column(
@@ -236,152 +216,69 @@ private fun RemoteControlScreen() {
 
         if (!connected) {
             Text("Available PCs", style = MaterialTheme.typography.titleMedium)
-            if (devices.isEmpty()) {
-                Text("No PCs found yet.")
-            } else {
-                devices.forEach { device ->
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { connectTo(device.host, device.port, device.name) }
-                    ) {
-                        Column {
-                            Text(device.name)
-                            Text("${device.host}:${device.port}")
-                        }
-                    }
+            if (devices.isEmpty()) Text("No PCs found yet.")
+            else devices.forEach { device ->
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { connectTo(device.host, device.port, device.name) }) {
+                    Column { Text(device.name); Text("${device.host}:${device.port}") }
                 }
             }
-
-            OutlinedTextField(
-                value = manualHost,
-                onValueChange = { manualHost = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Manual IP (development fallback)") },
-                singleLine = true
-            )
-
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = manualHost.isNotBlank(),
-                onClick = { connectTo(manualHost.trim(), 48721, manualHost.trim()) }
-            ) {
-                Text("Connect manually")
-            }
+            OutlinedTextField(value = manualHost, onValueChange = { manualHost = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Manual IP (development fallback)") }, singleLine = true)
+            Button(modifier = Modifier.fillMaxWidth(), enabled = manualHost.isNotBlank(), onClick = { connectTo(manualHost.trim(), 48721, manualHost.trim()) }) { Text("Connect manually") }
         } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(modifier = Modifier.weight(1f), onClick = { showKeyboard = false }) { Text("Touchpad") }
                 Button(modifier = Modifier.weight(1f), onClick = { showKeyboard = true }) { Text("Keyboard") }
                 Button(modifier = Modifier.weight(1f), onClick = { disconnect() }) { Text("Disconnect") }
             }
-
             Spacer(Modifier.height(4.dp))
 
             if (!showKeyboard) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(Color.LightGray)
-                        .pointerInput(connected) {
-                            awaitPointerEventScope {
+                    modifier = Modifier.fillMaxWidth().weight(1f).background(Color.LightGray).pointerInput(connected) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val startTime = System.currentTimeMillis(); var totalX = 0f; var totalY = 0f; var rightClickSent = false
                                 while (true) {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    val startTime = System.currentTimeMillis()
-                                    var totalX = 0f
-                                    var totalY = 0f
-                                    var rightClickSent = false
-
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val pressed = event.changes.filter { it.pressed }
-                                        val pointerCount = pressed.size
-
-                                        if (pointerCount == 0) {
-                                            val elapsed = System.currentTimeMillis() - startTime
-                                            if (!rightClickSent && abs(totalX) < 20f && abs(totalY) < 20f) {
-                                                if (elapsed >= 500L) sendButton("right") else sendButton("left")
-                                            }
-                                            break
-                                        }
-
-                                        if (pointerCount >= 2) {
-                                            val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat() / pointerCount
-                                            val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat() / pointerCount
-                                            if (abs(dy) >= 1f || abs(dx) >= 1f) {
-                                                val scrollX = (-dx / 12f).roundToInt()
-                                                val scrollY = (-dy / 12f).roundToInt()
-                                                if (scrollX != 0 || scrollY != 0) {
-                                                    sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":$scrollX,\"dy\":$scrollY}")
-                                                }
-                                            }
-                                        } else {
-                                            val change = pressed.first()
-                                            val delta = change.positionChange()
-                                            totalX += delta.x
-                                            totalY += delta.y
-
-                                            if (!rightClickSent && System.currentTimeMillis() - startTime >= 500L && abs(totalX) < 20f && abs(totalY) < 20f) {
-                                                sendButton("right")
-                                                rightClickSent = true
-                                            }
-
-                                            if (delta.x != 0f || delta.y != 0f) {
-                                                val dx = (delta.x * 1.5f).roundToInt()
-                                                val dy = (delta.y * 1.5f).roundToInt()
-                                                if (dx != 0 || dy != 0) {
-                                                    sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
-                                                }
-                                            }
-                                        }
+                                    val event = awaitPointerEvent(); val pressed = event.changes.filter { it.pressed }; val pointerCount = pressed.size
+                                    if (pointerCount == 0) {
+                                        val elapsed = System.currentTimeMillis() - startTime
+                                        if (!rightClickSent && abs(totalX) < 20f && abs(totalY) < 20f) { if (elapsed >= 500L) sendButton("right") else sendButton("left") }
+                                        break
+                                    }
+                                    if (pointerCount >= 2) {
+                                        val dy = pressed.sumOf { it.positionChange().y.toDouble() }.toFloat() / pointerCount
+                                        val dx = pressed.sumOf { it.positionChange().x.toDouble() }.toFloat() / pointerCount
+                                        val scrollX = (-dx / 12f).roundToInt(); val scrollY = (-dy / 12f).roundToInt()
+                                        if (scrollX != 0 || scrollY != 0) sendCommand("{\"version\":1,\"type\":\"mouse_scroll\",\"dx\":$scrollX,\"dy\":$scrollY}")
+                                    } else {
+                                        val delta = pressed.first().positionChange(); totalX += delta.x; totalY += delta.y
+                                        if (!rightClickSent && System.currentTimeMillis() - startTime >= 500L && abs(totalX) < 20f && abs(totalY) < 20f) { sendButton("right"); rightClickSent = true }
+                                        val dx = (delta.x * 1.5f).roundToInt(); val dy = (delta.y * 1.5f).roundToInt()
+                                        if (dx != 0 || dy != 0) sendCommand("{\"version\":1,\"type\":\"mouse_move\",\"dx\":$dx,\"dy\":$dy}")
                                     }
                                 }
                             }
-                        },
+                        }
+                    },
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Touchpad", style = MaterialTheme.typography.headlineSmall)
-                    Text("Drag • tap • two-finger scroll")
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                ) { Text("Touchpad", style = MaterialTheme.typography.headlineSmall); Text("Drag • tap • two-finger scroll") }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(modifier = Modifier.weight(1f), onClick = { sendButton("left") }) { Text("Left") }
                     Button(modifier = Modifier.weight(1f), onClick = { sendButton("right") }) { Text("Right") }
                 }
             } else {
-                Keyboard(
-                    shift = shift,
-                    ctrl = ctrl,
-                    alt = alt,
-                    meta = meta,
-                    onKey = { sendKey(it) },
-                    onModifier = { toggleModifier(it) }
-                )
+                Keyboard(shift, ctrl, alt, meta, { sendKey(it) }, { toggleModifier(it) })
             }
         }
     }
 }
 
 @Composable
-private fun Keyboard(
-    shift: Boolean,
-    ctrl: Boolean,
-    alt: Boolean,
-    meta: Boolean,
-    onKey: (String) -> Unit,
-    onModifier: (String) -> Unit
-) {
+private fun Keyboard(shift: Boolean, ctrl: Boolean, alt: Boolean, meta: Boolean, onKey: (String) -> Unit, onModifier: (String) -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f, fill = false)
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth().height(500.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         KeyboardRow(listOf("ESC"), onKey)
@@ -389,41 +286,25 @@ private fun Keyboard(
         KeyboardRow(listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"), onKey)
         KeyboardRow(listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"), onKey)
         KeyboardRow(listOf("Z", "X", "C", "V", "B", "N", "M"), onKey)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ModifierKey("Shift", shift, Modifier.weight(1.5f)) { onModifier("SHIFT") }
             ModifierKey("Ctrl", ctrl, Modifier.weight(1f)) { onModifier("CTRL") }
             ModifierKey("Alt", alt, Modifier.weight(1f)) { onModifier("ALT") }
             ModifierKey("Meta", meta, Modifier.weight(1f)) { onModifier("META") }
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             KeyButton("Tab", "TAB", Modifier.weight(1f), onKey)
             KeyButton("Backspace", "BACKSPACE", Modifier.weight(1.7f), onKey)
             KeyButton("Enter", "ENTER", Modifier.weight(1.5f), onKey)
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             KeyButton("Space", "SPACE", Modifier.weight(4f), onKey)
             KeyButton("←", "LEFT", Modifier.weight(1f), onKey)
             KeyButton("↑", "UP", Modifier.weight(1f), onKey)
             KeyButton("↓", "DOWN", Modifier.weight(1f), onKey)
             KeyButton("→", "RIGHT", Modifier.weight(1f), onKey)
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             KeyButton("Delete", "DELETE", Modifier.weight(1f), onKey)
             KeyButton("Home", "HOME", Modifier.weight(1f), onKey)
             KeyButton("End", "END", Modifier.weight(1f), onKey)
@@ -435,48 +316,21 @@ private fun Keyboard(
 
 @Composable
 private fun KeyboardRow(keys: List<String>, onKey: (String) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        keys.forEach { key ->
-            KeyButton(key, key, Modifier.weight(1f), onKey)
-        }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        keys.forEach { key -> KeyButton(key, key, Modifier.weight(1f), onKey) }
     }
 }
 
 @Composable
-private fun KeyButton(
-    label: String,
-    key: String,
-    modifier: Modifier,
-    onKey: (String) -> Unit
-) {
-    Button(
-        modifier = modifier.height(52.dp),
-        onClick = { onKey(key) }
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge
-        )
+private fun KeyButton(label: String, key: String, modifier: Modifier, onKey: (String) -> Unit) {
+    Button(modifier = modifier.height(52.dp), onClick = { onKey(key) }) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
     }
 }
 
 @Composable
-private fun ModifierKey(
-    label: String,
-    active: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit
-) {
-    Button(
-        modifier = modifier.height(52.dp),
-        onClick = onClick
-    ) {
-        Text(
-            text = if (active) "$label ON" else label,
-            style = MaterialTheme.typography.labelLarge
-        )
+private fun ModifierKey(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Button(modifier = modifier.height(52.dp), onClick = onClick) {
+        Text(if (active) "$label ON" else label, style = MaterialTheme.typography.labelLarge)
     }
 }
