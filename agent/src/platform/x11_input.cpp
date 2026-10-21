@@ -2,8 +2,8 @@
 
 #include <X11/Xlib.h>
 #include <X11/extensions/XTest.h>
-#include <X11/keysym.h>
 
+#include <cstdlib>
 #include <mutex>
 
 namespace {
@@ -94,17 +94,16 @@ bool scroll(int dx, int dy, std::string& error) {
         return false;
     }
 
-    // XTest represents vertical wheel events as buttons 4/5 and horizontal
-    // wheel events as buttons 6/7. Emit one event per requested wheel step.
-    const auto emit = [&](int button, int count) {
+    const auto emit = [&](int positive_button, int count) {
         const int direction = count > 0 ? 1 : -1;
         for (int i = 0; i < std::abs(count); ++i) {
-            const int actual = direction > 0 ? button : button + 1;
+            const int actual = direction > 0 ? positive_button : positive_button + 1;
             XTestFakeButtonEvent(g_display, actual, True, CurrentTime);
             XTestFakeButtonEvent(g_display, actual, False, CurrentTime);
         }
     };
 
+    // X11 wheel buttons: 4/5 vertical and 6/7 horizontal.
     emit(6, dx);
     emit(4, dy);
     XFlush(g_display);
