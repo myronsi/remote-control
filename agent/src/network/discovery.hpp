@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <thread>
 
 namespace remote::discovery {
 
@@ -20,7 +22,8 @@ private:
     std::string instance_name_;
     std::uint16_t port_;
     bool running_ = false;
-    int fd_ = -1;
+    std::thread thread_;
+    std::shared_ptr<std::atomic_bool> stop_requested_;
 };
 
 }
