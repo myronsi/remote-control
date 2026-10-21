@@ -1,45 +1,90 @@
 #include "network/discovery.hpp"
 
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <avahi-client/client.h>
+#include <avahi-client/publish.h>
+#include <avahi-common/error.h>
+#include <avahi-common/simple-watch.h>
 
-#include <array>
-#include <string>
+#include <iostream>
+#include <utility>
 
 namespace remote::discovery {
 
 namespace {
-constexpr std::uint16_t kMdnsPort = 5353;
-constexpr const char* kMdnsAddress = "224.0.0.251";
+constexpr const char* kServiceType = "_remotecontrol._tcp";
 
-std::string escape_dns_name(const std::string& name) {
-    return name;
-}
+struct Context {
+    AvahiSimplePoll* poll = nullptr;
+    AvahiClient* client = nullptr;
+    AvahiEntryGroup* group = nullptr;
+    std::string instance_name;
+    std::uint16_t port = 0;
+};
 
-void append_u16(std::string& out, std::uint16_t value) {
-    out.push_back(static_cast<char>((value >> 8) & 0xff));
-    out.push_back(static_cast<char>(value & 0xff));
-}
+void entry_group_callback(AvahiEntryGroup*, AvahiEntryGroupState state, void* userdata) {
+    auto* context = static_cast<Context*>(userdata);
 
-void append_dns_name(std::string& out, const std::string& name) {
-    std::size_t start = 0;
-    while (start < name.size()) {
-        const auto dot = name.find('.', start);
-        const auto end = dot == std::string::npos ? name.size() : dot;
-        const auto length = end - start;
-        out.push_back(static_cast<char>(length));
-        out.append(name, start, length);
-        if (dot == std::string::npos) break;
-        start = dot + 1;
+    if (state == AVAHI_ENTRY_GROUP_ESTABLISHED) {
+        std::cout << "mDNS: advertising " << context->instance_name
+                  << " on " << kServiceType << ":" << context->port << '\n';
+    } else if (state == AVAHI_ENTRY_GROUP_COLLISION) {
+        std::cerr << "mDNS: service name collision\n";
+    } else if (state == AVAHI_ENTRY_GROUP_FAILURE) {
+        std::cerr << "mDNS: entry group failure: "
+                  << avahi_strerror(avahi_client_errno(context->client)) << '\n';
+        avahi_simple_poll_quit(context->poll);
     }
-    out.push_back('\0');
 }
 
+void client_callback(AvahiClient* client, AvahiClientState state, void* userdata) {
+    auto* context = static_cast<Context*>(userdata);
+    context->client = client;
+
+    if (state == AVAHI_CLIENT_FAILURE) {
+        std::cerr << "mDNS: client failure: "
+                  << avahi_strerror(avahi_client_errno(client)) << '\n';
+        avahi_simple_poll_quit(context->poll);
+        return;
+    }
+
+    if (state != AVAHI_CLIENT_S_RUNNING || context->group) return;
+
+    context->group = avahi_entry_group_new(client, entry_group_callback, context);
+    if (!context->group) {
+        std::cerr << "mDNS: unable to create entry group\n";
+        avahi_simple_poll_quit(context->poll);
+        return;
+    }
+
+    const int result = avahi_entry_group_add_service(
+        context->group,
+        AVAHI_IF_UNSPEC,
+        AVAHI_PROTO_UNSPEC,
+        static_cast<AvahiPublishFlags>(0),
+        context->instance_name.c_str(),
+        kServiceType,
+        nullptr,
+        nullptr,
+        context->port,
+        "version=1",
+        "protocol=1",
+        nullptr
+    );
+
+    if (result < 0) {
+        std::cerr << "mDNS: unable to add service: " << avahi_strerror(result) << '\n';
+        avahi_simple_poll_quit(context->poll);
+        return;
+    }
+
+    if (avahi_entry_group_commit(context->group) < 0) {
+        std::cerr << "mDNS: unable to publish service: "
+                  << avahi_strerror(avahi_client_errno(client)) << '\n';
+        avahi_simple_poll_quit(context->poll);
+    }
 }
+
+} // namespace
 
 Service::Service(std::string instance_name, std::uint16_t port)
     : instance_name_(std::move(instance_name)), port_(port) {}
@@ -51,48 +96,76 @@ Service::~Service() {
 bool Service::start(std::string& error) {
     if (running_) return true;
 
-    fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd_ < 0) {
-        error = std::string("mDNS socket: ") + std::strerror(errno);
+    auto stop_requested = std::make_shared<std::atomic_bool>(false);
+    stop_requested_ = stop_requested;
+
+    auto ready = std::make_shared<std::atomic_bool>(false);
+    auto failed = std::make_shared<std::string>();
+
+    thread_ = std::thread([
+        instance_name = instance_name_,
+        port = port_,
+        stop_requested,
+        ready,
+        failed
+    ]() {
+        Context context;
+        context.instance_name = instance_name;
+        context.port = port;
+        context.poll = avahi_simple_poll_new();
+
+        if (!context.poll) {
+            *failed = "Unable to create Avahi simple poll";
+            ready->store(true);
+            return;
+        }
+
+        int client_error = 0;
+        context.client = avahi_client_new(
+            avahi_simple_poll_get(context.poll),
+            static_cast<AvahiClientFlags>(0),
+            client_callback,
+            &context,
+            &client_error
+        );
+
+        if (!context.client) {
+            *failed = std::string("Unable to create Avahi client: ") + avahi_strerror(client_error);
+            avahi_simple_poll_free(context.poll);
+            ready->store(true);
+            return;
+        }
+
+        ready->store(true);
+
+        while (!stop_requested->load()) {
+            if (avahi_simple_poll_iterate(context.poll, 100) < 0) break;
+        }
+
+        if (context.group) avahi_entry_group_free(context.group);
+        avahi_client_free(context.client);
+        avahi_simple_poll_free(context.poll);
+    });
+
+    while (!ready->load()) std::this_thread::yield();
+
+    if (!failed->empty()) {
+        error = *failed;
+        stop_requested->store(true);
+        if (thread_.joinable()) thread_.join();
+        stop_requested_.reset();
         return false;
     }
 
-    int reuse = 1;
-    ::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in local{};
-    local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);
-    local.sin_port = htons(kMdnsPort);
-
-    if (::bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
-        error = std::string("mDNS bind: ") + std::strerror(errno);
-        stop();
-        return false;
-    }
-
-    ip_mreq membership{};
-    membership.imr_multiaddr.s_addr = inet_addr(kMdnsAddress);
-    membership.imr_interface.s_addr = htonl(INADDR_ANY);
-
-    if (::setsockopt(fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &membership, sizeof(membership)) < 0) {
-        error = std::string("mDNS membership: ") + std::strerror(errno);
-        stop();
-        return false;
-    }
-
-    // The socket is prepared for the mDNS responder. Actual DNS-SD records
-    // will be added in the next discovery implementation step.
     running_ = true;
     return true;
 }
 
 void Service::stop() {
-    if (fd_ >= 0) {
-        ::close(fd_);
-        fd_ = -1;
-    }
+    if (stop_requested_) stop_requested_->store(true);
+    if (thread_.joinable()) thread_.join();
+    stop_requested_.reset();
     running_ = false;
 }
 
-}
+} // namespace remote::discovery
